@@ -33,12 +33,13 @@ class SimpleVector {
 public:
     using Iterator = Type*;
     using ConstIterator = const Type*;
+    using Pointers = ArrayPtr<Type>;
 
     SimpleVector() noexcept = default;
 
     // Создаёт вектор из size элементов, инициализированных значением по умолчанию
     explicit SimpleVector(size_t size) {
-        ArrayPtr<Type> array_ptr(size);
+        Pointers array_ptr(size);
         FillWithDefaultValue(&array_ptr[0], &array_ptr[size]);
         array_ptr_.swap(array_ptr);
         size_ = size;
@@ -46,10 +47,12 @@ public:
     }
 
     // Создаёт вектор из size элементов, инициализированных значением value
-    SimpleVector(size_t size, const Type& value) : size_(size), capacity_(size) {
-        ArrayPtr<Type> array_ptr(size);
+    SimpleVector(size_t size, const Type& value) {
+        Pointers array_ptr(size);
         std::fill(&array_ptr[0], &array_ptr[size], value);
         array_ptr_.swap(array_ptr);
+        size_ = size;
+        capacity_ = size;
     }
 
     // Создаёт вектор из std::initializer_list
@@ -84,8 +87,6 @@ public:
         if (this != &rhs) {
             if (rhs.IsEmpty()) {
                 Clear();
-                size_ = 0;
-                capacity_ = 0;
                 return *this;
             }
             auto rhs_copy(rhs);
@@ -97,9 +98,8 @@ public:
     // Перемещающий оператор присваивания
     SimpleVector& operator=(SimpleVector&& rhs) noexcept {
         if (this != &rhs) {
-            array_ptr_ = std::move(rhs.array_ptr_);
-            size_ = std::exchange(rhs.size_, 0);
-            capacity_ = std::exchange(rhs.capacity_, 0);
+            SimpleVector<Type> new_vector(std::move(rhs));
+            swap(new_vector);
         }
         return *this;
     }
@@ -121,11 +121,13 @@ public:
 
     // Возвращает ссылку на элемент с индексом index
     Type& operator[](size_t index) noexcept {
+        assert(index <= size_);
         return array_ptr_[index];
     }
 
     // Возвращает константную ссылку на элемент с индексом index
     const Type& operator[](size_t index) const noexcept {
+        assert(index <= size_);
         return array_ptr_[index];
     }
 
@@ -159,24 +161,18 @@ public:
     // Изменяет размер массива.
     // При увеличении размера новые элементы получают значение по умолчанию для типа Type
     void Resize(size_t new_size) {
-        if (new_size > size_) {
-            if (new_size > capacity_) {
-                size_t max_size = std::max(2 * capacity_, new_size);
-                ArrayPtr<Type> array_bigger(max_size);
-                std::move(begin(), end(), array_bigger.Get());
-                FillWithDefaultValue(&array_bigger[size_], &array_bigger[max_size]);
-                array_ptr_.swap(array_bigger);
-                size_ = new_size;
-                capacity_ = max_size;
-            }
-            else {
-                FillWithDefaultValue(end(), &array_ptr_[new_size]);
-                size_ = new_size;
-            }
+        if (new_size > capacity_) {
+            size_t max_size = std::max(2 * capacity_, new_size);
+            Pointers array_bigger(max_size);
+            std::move(begin(), end(), array_bigger.Get());
+            FillWithDefaultValue(array_bigger.Get() + size_, array_bigger.Get() + max_size);
+            array_ptr_.swap(array_bigger);
+            capacity_ = max_size;
         }
-        else {
-            size_ = new_size;
+        else if (new_size > size_ && new_size <= capacity_) {
+            FillWithDefaultValue(end(), array_ptr_.Get() + new_size);
         }
+        size_ = new_size;
     }
 
     // Возвращает итератор на начало массива
@@ -262,6 +258,7 @@ public:
     // Если перед вставкой значения вектор был заполнен полностью,
     // вместимость вектора должна увеличиться вдвое, а для вектора вместимостью 0 стать равной 1
     Iterator Insert(ConstIterator pos, const Type& value) {
+        assert(std::distance(cbegin(), pos) >= 0 && std::distance(pos, cend()) >= 0);
         size_t pos_distance = std::distance(cbegin(), pos);
         if (capacity_ == 0) {
             SimpleVector<Type> new_vector(1);
@@ -289,6 +286,7 @@ public:
     // Если перед вставкой значения вектор был заполнен полностью,
     // вместимость вектора должна увеличиться вдвое, а для вектора вместимостью 0 стать равной 1
     Iterator Insert(ConstIterator pos, Type&& value) {
+        assert(std::distance(cbegin(), pos) >= 0 && std::distance(pos, cend()) >= 0);
         size_t pos_distance = std::distance(cbegin(), pos);
         if (capacity_ == 0) {
             SimpleVector<Type> new_vector(1);
@@ -313,13 +311,13 @@ public:
 
     // "Удаляет" последний элемент вектора. Вектор не должен быть пустым
     void PopBack() noexcept {
-        if (!IsEmpty()) {
-            --size_;
-        }
+        assert(!IsEmpty());
+        --size_;
     }
 
     // Удаляет элемент вектора в указанной позиции
     Iterator Erase(ConstIterator pos) {
+        assert(std::distance(cbegin(), pos) >= 0 && std::distance(pos, cend()) >= 0);
         size_t pos_distance = std::distance(cbegin(), pos);
         std::move(begin() + pos_distance + 1, end(), &array_ptr_[pos_distance]);
         --size_;
@@ -345,7 +343,7 @@ public:
     }
 
 private:
-    ArrayPtr<Type> array_ptr_;
+    Pointers array_ptr_;
     size_t size_ = 0;
     size_t capacity_ = 0;
 
