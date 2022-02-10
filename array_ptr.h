@@ -31,13 +31,12 @@ public:
 
     ArrayPtr(ArrayPtr&& other) {
         raw_ptr_ = std::exchange(other.raw_ptr_, nullptr);
-        //raw_ptr_ = std::move(std::make_move_iterator(other.raw_ptr_));
     }
 
     ArrayPtr& operator=(ArrayPtr&& rhs) noexcept {
         if (this != &rhs) {
-            raw_ptr_ = rhs.raw_ptr_;
-            rhs.raw_ptr_ = nullptr;
+            ArrayPtr<Type> new_ptr(std::move(rhs));
+            swap(new_ptr);
         }
         return *this;
     }
